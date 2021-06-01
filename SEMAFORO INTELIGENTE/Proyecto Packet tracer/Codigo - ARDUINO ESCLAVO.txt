@@ -1,0 +1,205 @@
+//Declaración de variables
+
+//Pines pertenecientes a los LEDS de los semaforos automovilisticos 
+	var RA = 0; //LED ROJO AUTO
+	var AA = 1; //LED AMBAR AUTO
+	var VA = 2; //LED VERDE AUTO
+
+//Pines pertenecientes a los LEDS de los semaforos peatonales
+	var RP = 3; //LED ROJO PERSONA
+	var VP = 4; //LED VERDE PERSONA
+
+//Pin comunicador sobre el encendido del sistema
+	var recibirEncendido = A0;
+//Boton de cambio
+	var botonCambio = A1;
+//Comunicación de los cambios en los semaforos inteligentes
+	var comunicarCambio = A2;
+	var recibirCambio = A3;
+	
+//Tiempos entre los cambios de las luces
+	var tRojo = 4000;
+	var tAmbar = 500;
+	var tVerde = 4000;
+	var tCambio = 1000; //Cambio especial del semaforo inteligente
+
+//Tiempo de parpadeo en el semaforo peatonal antes del cambio
+	var tpRojo = 500;
+	var tpVerde = 500;
+	
+/*Estados de los semaforos (tomando de referencia el automovilistico)
+  1. LUZ VERDE
+  2. LUZ AMBAR (En el caso del s. peatonal iniciará el parpadeo)
+  3. LUZ ROJA
+  4. CASO ESPECIAL: LUZ ROJA A VERDE POR BOTON DE CAMBIO*/
+	var estadoInicio = 3; //1. LUZ VERDE 2.LUZ AMBAR 3. LUZ ROJA
+	var estadoSiguiente;
+	var estadoActual;
+	
+//Parpadeo de la luz antes del cambio
+function parpadeo(luzParpadeante,tparpadeo){
+	var intervalo = 5; //Intervalo entre parpadeos
+	var txparpadeo = tparpadeo/intervalo; //Tiempo entre parpadeos
+	digitalWrite(luzParpadeante, LOW);
+	delay(txparpadeo);
+	digitalWrite(luzParpadeante, HIGH);
+	delay(txparpadeo);
+	digitalWrite(luzParpadeante, LOW);
+	delay(txparpadeo);
+	digitalWrite(luzParpadeante, HIGH);
+	delay(txparpadeo);
+	digitalWrite(luzParpadeante, LOW);
+	delay(txparpadeo);
+}
+
+function luzVR(luzA, luzP, tLuz,tparpadeo,estadoActual){
+	var t; //Controla cuanto tiempo ha pasado en el semaforo rojo
+	var bc=LOW; //Detecta la señal entrante al presionar el boton de cambio
+	var rc=LOW; //Recepciona la señal entrante en caso el otro arduino emita señal de cambio
+	
+	//Encendemos las luces de ambos semaforos
+	digitalWrite(luzA, HIGH);
+	digitalWrite(luzP, HIGH);
+	
+	//Si la luz es roja y puede darse un cambio inteligente a verde
+	if(estadoActual==3){
+		t=0;
+		/*Si la luz encendida es roja se debe retrasar esta lo que demoraria la luz ambar 
+		en los otros semaforos (para una mejor sincronización)*/
+		while(t<(tLuz-tparpadeo+tAmbar)){
+			bc=digitalRead(botonCambio);
+			if(bc==HIGH){
+				digitalWrite(comunicarCambio,HIGH);
+				return 4; //Cambio rojo a verde (modo inteligente)
+			}
+			t=t+10;
+			delay(10);
+		}
+	} else if(estadoActual==1) { //Si la luz es verde y puede darse un cambio inteligente a roja
+		t=0;
+		while(t<(tLuz-tparpadeo)){
+			rc=digitalRead(recibirCambio);
+			if(rc==HIGH){
+				return 5; //Cambio de verde a rojo (modo inteligente)
+			}
+			t=t+10;
+			delay(10);
+		}
+	}
+
+	parpadeo(luzP,tparpadeo);
+	
+	//Apagamos las luces de ambos semaforos
+	digitalWrite(luzA, LOW);
+	digitalWrite(luzP, LOW);
+	
+	//Actualizamos los estados
+	if(estadoActual==1){
+		return 2; //Verde pasará a ambar
+	}else if(estadoActual==3){
+		return 1; //Rojo pasará a verde
+	} 
+}
+
+//Encendido y apagado de una luz ambar
+function luzAmbar(luzA, luzP, tLuz,tparpadeo,estadoActual){
+	//Encendemos las luces de ambos semaforos
+	digitalWrite(luzA, HIGH);
+	delay(tLuz-tparpadeo); //Le reducimos el tiempo en el que entrara en parpadeo
+	
+	/*Si la luz es ambar entonces la luz verde peatonal parpadeará simulando el paso por ambar antes del 
+	//cambio posterior a rojo*/
+	parpadeo(luzP,tparpadeo);
+	
+	//Apagamos la 
+	digitalWrite(luzA, LOW);
+	
+	//Actualizamos los estados
+	return 3; //Ambar pasa a rojo
+}
+
+//Cambio inteligente, rojo a verde (si emite) o verde a rojo (si recibe)
+function cambioInteligente(luzA, luzP, tLuz,tparpadeo,estadoActual){
+	var t; //Controla cuanto tiempo ha pasado en el semaforo rojo
+	var bc; //Detecta la señal entrante al presionar el boton de cambio
+	var rc; //Recepciona la señal entrante en caso el otro arduino emita señal de cambio
+	
+	//Encendemos las luces de ambos semaforos
+	digitalWrite(luzA, HIGH);
+	digitalWrite(luzP, HIGH);
+	
+	delay(tLuz-tparpadeo); //Le reducimos el tiempo en el que entrara en parpadeo
+	
+	/*Si la luz encendida es roja se debe retrasar esta lo que demoraria la luz ambar 
+	en los otros semaforos (para una mejor sincronización)*/
+	if(estadoActual==3)delay(tAmbar);
+
+	parpadeo(luzP,tparpadeo);
+	
+	//Apagamos las luces de ambos semaforos
+	digitalWrite(luzA, LOW);
+	digitalWrite(luzP, LOW);
+	
+	//Actualizamos los estados
+	if(estadoActual==4){
+		return 1; //Si es rojo pasará a verde
+	}else {
+		return 2; //si es verde pasa a rojo. Si es rojo pasa a verde (Independientemente si es el cambio inteligente o no)
+	}
+}
+
+
+
+
+function setup() {
+	pinMode(RA, OUTPUT); //ROJO AUTO
+	pinMode(AA, OUTPUT); //AMBAR AUTO
+	pinMode(VA, OUTPUT); //VERDE AUTO
+	
+	pinMode(RP, OUTPUT); //ROJO PERSONA
+	pinMode(VP, OUTPUT); //VERDE PERSONA
+	
+	pinMode(recibirEncendido, INPUT); //SWITCH DE ENCENDIDO
+	
+	pinMode(botonCambio, INPUT); //BOTON DE CAMBIO INTELIGENTE
+	pinMode(comunicarCambio, OUTPUT); //EMISOR DE CAMBIO INTELIGENTE
+	pinMode(recibirCambio, INPUT); //RECEPTOR DE CAMBIO INTELIGENTE
+}
+
+function loop() {
+	//Determinamos si el circuito enciende o se queda apagado a traves del switch principal
+	var encender = digitalRead(recibirEncendido);
+	//Encender el sistema
+	if (encender == HIGH){
+		switch (estadoActual){
+		//Luz verde
+		case 1: estadoSiguiente = luzVR(VA,VP,tVerde,tpVerde,estadoActual); 
+				break;
+		//Luz ambar
+		case 2: estadoSiguiente = luzAmbar(AA,VP,tAmbar,tpVerde,estadoActual); 
+				break;
+		//Luz roja
+		case 3: estadoSiguiente = luzVR(RA,RP,tRojo,tpRojo,estadoActual); 
+				break;
+		//Cambio inteligente de rojo a verde
+		case 4: digitalWrite(comunicarCambio,LOW);
+				estadoSiguiente = cambioInteligente(RA,RP,tCambio,tpRojo,estadoActual); 
+				break;
+		//Cambio inteligente de verde a rojo
+		case 5: digitalWrite(recibirCambio,LOW);
+				estadoSiguiente = cambioInteligente(VA,VP,tCambio,tpVerde,estadoActual); 
+				break;
+		}
+		//Actualizamos el estado 
+		estadoActual = estadoSiguiente;
+	}else{
+		//Apagar sistema
+		digitalWrite(RA, LOW);
+		digitalWrite(RP, LOW);
+		digitalWrite(VA, LOW);
+		digitalWrite(VP, LOW);
+		digitalWrite(AA, LOW);
+		//Volver al estado de inicio
+		estadoActual = estadoInicio;
+	}
+}
